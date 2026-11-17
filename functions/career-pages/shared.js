@@ -40,13 +40,83 @@ export function parseJobs(html,base,company) {
   return jobs;
 }
 
-export async function fetchText(url) {
-  const origin=new URL(url).origin,options={headers:{'user-agent':'JobRadar/1.0 (personal job discovery; respectful public career page fetch)','accept':'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8','accept-language':'en-IN,en;q=0.9','referer':origin+'/'}};
-  for(let attempt=0;attempt<2;attempt++){
-    try{const r=await fetch(url,options);if(r.ok)return r.text();if(attempt===0&&[521,522,523,524,502,503,504].includes(r.status)){await new Promise(resolve=>setTimeout(resolve,700));continue}throw Error(`HTTP ${r.status}`)}
-    catch(e){if(attempt===0&&/fetch failed|network|connection/i.test(String(e))){await new Promise(resolve=>setTimeout(resolve,700));continue}throw e}
+const sleep = ms => new Promise(resolve=>setTimeout(resolve,Math.max(0,ms)));
+const requestTails = new Map();
+const lastRequestAt = new Map();
+const MIN_ORIGIN_INTERVAL_MS = 1200;
+
+async function queuedFetch(origin,request) {
+  const previous=requestTails.get(origin)||Promise.resolve();
+  let release;
+  const gate=new Promise(resolve=>{release=resolve});
+  const tail=previous.catch(()=>{}).then(()=>gate);
+  requestTails.set(origin,tail);
+  await previous.catch(()=>{});
+  const waitMs=MIN_ORIGIN_INTERVAL_MS-(Date.now()-(lastRequestAt.get(origin)||0));
+  if(waitMs>0)await sleep(waitMs);
+  try{
+    lastRequestAt.set(origin,Date.now());
+    return await request();
+  }finally{
+    release();
+    if(requestTails.get(origin)===tail)requestTails.delete(origin);
   }
-  throw Error('Career page temporarily unavailable after retry');
+}
+
+function retryAfterMs(value) {
+  if(!value)return null;
+  const seconds=Number(value);
+  if(Number.isFinite(seconds))return Math.max(0,seconds*1000);
+  const date=Date.parse(value);
+  return Number.isFinite(date)?Math.max(0,date-Date.now()):null;
+}
+
+function requestError(message,status,cooldownMs=0) {
+  const error=new Error(message);
+  error.status=status;
+  error.blockedBySite=status===403;
+  error.cooldownUntil=cooldownMs?new Date(Date.now()+cooldownMs).toISOString():'';
+  return error;
+}
+
+export async function fetchRespectfully(url,options={}) {
+  const origin=new URL(url).origin;
+  let transientRetries=0,rateLimitRetries=0;
+  while(true){
+    let response;
+    try{
+      response=await queuedFetch(origin,()=>fetch(url,options));
+    }catch(error){
+      if(transientRetries++<1){await sleep(1500);continue}
+      throw requestError(`Network request failed: ${String(error?.message||error).slice(0,140)}`,0,5*60*1000);
+    }
+    if(response.status===429){
+      const serverWait=retryAfterMs(response.headers.get('retry-after'));
+      if(rateLimitRetries===0&&serverWait!==null&&serverWait>0&&serverWait<=10000){
+        await response.body?.cancel().catch(()=>{});
+        await sleep(serverWait);
+        rateLimitRetries++;
+        continue;
+      }
+      const cooldownMs=serverWait===null?15*60*1000:Math.max(60*1000,serverWait);
+      await response.body?.cancel().catch(()=>{});
+      throw requestError(`HTTP 429: the site rate-limited this request; retry paused for ${Math.ceil(cooldownMs/60000)} minute(s)`,429,cooldownMs);
+    }
+    if(response.status===403){
+      await response.body?.cancel().catch(()=>{});
+      throw requestError('HTTP 403: the site denied automated access; retry paused for 12 hours',403,12*60*60*1000);
+    }
+    if(response.status>=500&&transientRetries++<1){
+      await response.body?.cancel().catch(()=>{});
+      await sleep(1500);
+      continue;
+    }
+    if(!response.ok){
+      await response.body?.cancel().catch(()=>{});
+      throw requestError(`HTTP ${response.status}`,response.status,0);
+    }
+    return response;
+  }
 }
 
 export function key(url,sourceId='') {
@@ -63,6 +133,12 @@ export function appendOffsetUrl(source,offset) {
 export function searchResultsPager(html) {
   const match=strip(html).match(/Results\s+(\d+)\s*(?:[–-]|to)\s+(\d+)\s+of\s+([\d,]+)/i);
   return match?{pageSize:Number(match[2])-Number(match[1])+1,total:Number(match[3].replaceAll(',',''))}:null;
+}
+
+export async function fetchText(url) {
+  const origin=new URL(url).origin,options={headers:{'user-agent':'JobRadar/1.0 (personal job discovery; respectful public career page fetch)','accept':'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8','accept-language':'en-IN,en;q=0.9','referer':origin+'/'}};
+  const response=await fetchRespectfully(url,options);
+  return response.text();
 }
 
 export async function fetchHtmlPage(source,offset,state={},options={}) {

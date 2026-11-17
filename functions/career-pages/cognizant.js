@@ -44,8 +44,11 @@ export async function fetchPage(source, offset = 0, state = {}) {
     incremental: true
   };
 
-  const pages = await Promise.all(Array.from({ length: PAGES_PER_BATCH }, (_, index) =>
-    fetchHtmlPage(source, batchOffset + index * PAGE_SIZE, pageState, options)));
+  // Keep requests sequential for this board; concurrent page bursts invite 403/429 responses.
+  const pages = [];
+  for (let index = 0; index < PAGES_PER_BATCH; index++) {
+    pages.push(await fetchHtmlPage(source, batchOffset + index * PAGE_SIZE, pageState, options));
+  }
   const total = pages.find(page => page.total > 0)?.total || 0;
   const jobs = pages.flatMap(page => page.jobs);
 
