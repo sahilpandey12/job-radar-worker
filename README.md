@@ -1,6 +1,6 @@
 # Job Finder — Vercel + Firebase + GitHub Actions
 
-This is the replacement for the Cloudflare Pages/D1 hosting wrapper. It keeps the current Job Finder screen and career-page adapters, stores jobs in Firebase Firestore, serves the app/API on Vercel, and runs scans in GitHub Actions every two hours (India time). The manual **Run scan** button also starts a GitHub Actions run. **Stop scan** marks the run stopped; the worker stops after its current career-page request finishes.
+This is the replacement for the Cloudflare Pages/D1 hosting wrapper. It keeps the current Job Finder screen and career-page adapters, stores jobs in Firebase Firestore, serves the app/API on Vercel, and runs scans only when you start one manually. The **Run scan** button starts a GitHub Actions run. **Stop scan** marks the run stopped; the worker stops after its current career-page request finishes. No automatic scan schedule is configured.
 
 ## What is included
 
@@ -21,7 +21,7 @@ The app creates Firestore collections automatically on its first request. Keep F
 3. Choose **Add file → Upload files**.
 4. Upload the contents of the extracted `job-radar-vercel-firebase` folder into the repository root. Include the hidden `.github` folder; it contains the scheduled scan workflow.
 5. Commit the upload to the `main` branch. The new repository can be public; secrets are configured separately and are not in these files.
-6. Open the repository’s **Actions** tab and enable workflows if GitHub asks. GitHub may pause scheduled workflows in public repositories after 60 days without repository activity; check the Actions page occasionally and re-enable the schedule if GitHub pauses it.
+6. Open the repository’s **Actions** tab and enable workflows if GitHub asks.
 
 Do not upload the ZIP as a single file, and do not upload a Firebase service-account JSON file.
 
@@ -63,7 +63,7 @@ The Firestore Rules can remain locked in production mode. The service-account ke
 1. Open the Vercel deployment URL and sign in with `APP_PASSWORD`.
 2. The first visit creates Firestore collections and adds the default career pages from the latest project. They appear in the Career pages list; you can turn pages on or off there.
 3. Click **Run scan**. In a separate tab, GitHub **Actions → Job Finder scan** should show the run.
-4. Later scans also run on the two-hour schedule in India time. GitHub can delay scheduled runs during busy periods.
+4. Scans run only when you click **Run scan** in Job Finder. You can also start one manually from GitHub by opening **Actions → Job Finder scan → Run workflow**.
 
 ## Important notes
 
