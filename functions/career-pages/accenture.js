@@ -5,7 +5,20 @@ export const id = 'accenture';
 const WORKDAY_API = 'https://accenture.wd103.myworkdayjobs.com/wday/cxs/accenture/AccentureCareers/jobs';
 const WORKDAY_BASE = 'https://accenture.wd103.myworkdayjobs.com/AccentureCareers';
 const PAGE_SIZE = 20;
-const REQUEST_BATCH = 4;
+// Keep Accenture requests incremental and sequential. Its public feed rate-limits
+// bursts, and one page is enough to detect whether new postings were added.
+const REQUEST_BATCH = 1;
+const MIN_REQUEST_INTERVAL_MS = 2000;
+let lastRequestAt = 0;
+
+function retryAfterMs(header) {
+  if (header && /^\d+(?:\.\d+)?$/.test(header.trim())) return Math.max(1000, Number(header) * 1000);
+  if (header) {
+    const date = Date.parse(header);
+    if (Number.isFinite(date)) return Math.max(1000, date - Date.now());
+  }
+  return 15 * 60 * 1000;
+}
 
 export function matches(url) {
   return url.hostname.toLowerCase() === 'www.accenture.com'
@@ -45,6 +58,9 @@ function parseJob(item, company) {
 }
 
 async function fetchBatch(offset, searchText) {
+  const waitMs = lastRequestAt + MIN_REQUEST_INTERVAL_MS - Date.now();
+  if (waitMs > 0) await new Promise(resolve => setTimeout(resolve, waitMs));
+
   const response = await fetch(WORKDAY_API, {
     method: 'POST',
     headers: {
@@ -56,9 +72,16 @@ async function fetchBatch(offset, searchText) {
     },
     body: JSON.stringify({ appliedFacets: {}, limit: PAGE_SIZE, offset, searchText })
   });
+  lastRequestAt = Date.now();
 
   if (!response.ok) {
     const detail = (await response.text()).slice(0, 180).replace(/\s+/g, ' ').trim();
+    if (response.status === 429) {
+      const error = new Error(`Accenture job feed HTTP 429: site rate limit; retry paused for ${Math.ceil(retryAfterMs(response.headers.get('retry-after')) / 60000)} minute(s).`);
+      error.status = 429;
+      error.retryAfterMs = retryAfterMs(response.headers.get('retry-after'));
+      throw error;
+    }
     throw new Error(`Accenture job feed HTTP ${response.status}${detail ? `: ${detail}` : ''}`);
   }
 
@@ -81,8 +104,10 @@ export async function fetchPage(source, offset = 0) {
   const searchText = [pageQuery, locationNeedle].filter(Boolean).join(' ');
   const batchSize = PAGE_SIZE * REQUEST_BATCH;
   const firstOffset = Math.floor(Number(offset || 0) / batchSize) * batchSize;
-  const responses = await Promise.all(Array.from({ length: REQUEST_BATCH }, (_, index) =>
-    fetchBatch(firstOffset + index * PAGE_SIZE, searchText)));
+  const responses = [];
+  for (let index = 0; index < REQUEST_BATCH; index++) {
+    responses.push(await fetchBatch(firstOffset + index * PAGE_SIZE, searchText));
+  }
 
   const records = responses.flatMap(result => result.jobPostings);
   const totalValue = responses.find(result => Number.isFinite(Number(result.total)))?.total;
