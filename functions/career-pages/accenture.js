@@ -1,11 +1,11 @@
-import { abs, fetchRespectfully, inferLocation, strip } from './shared.js';
+import { abs, inferLocation, strip } from './shared.js';
 
 export const id = 'accenture';
 
 const WORKDAY_API = 'https://accenture.wd103.myworkdayjobs.com/wday/cxs/accenture/AccentureCareers/jobs';
 const WORKDAY_BASE = 'https://accenture.wd103.myworkdayjobs.com/AccentureCareers';
 const PAGE_SIZE = 20;
-const REQUEST_BATCH = 1;
+const REQUEST_BATCH = 4;
 
 export function matches(url) {
   return url.hostname.toLowerCase() === 'www.accenture.com'
@@ -45,7 +45,7 @@ function parseJob(item, company) {
 }
 
 async function fetchBatch(offset, searchText) {
-  const response = await fetchRespectfully(WORKDAY_API, {
+  const response = await fetch(WORKDAY_API, {
     method: 'POST',
     headers: {
       'content-type': 'application/json',
@@ -81,10 +81,12 @@ export async function fetchPage(source, offset = 0) {
   const searchText = [pageQuery, locationNeedle].filter(Boolean).join(' ');
   const batchSize = PAGE_SIZE * REQUEST_BATCH;
   const firstOffset = Math.floor(Number(offset || 0) / batchSize) * batchSize;
-  // Fetch one page at a time. Parallel page bursts were triggering the feed's 429 rate limit.
-  const result = await fetchBatch(firstOffset, searchText);
-  const records = result.jobPostings;
-  const total = Number(result.total) || 0;
+  const responses = await Promise.all(Array.from({ length: REQUEST_BATCH }, (_, index) =>
+    fetchBatch(firstOffset + index * PAGE_SIZE, searchText)));
+
+  const records = responses.flatMap(result => result.jobPostings);
+  const totalValue = responses.find(result => Number.isFinite(Number(result.total)))?.total;
+  const total = Number(totalValue) || 0;
   const jobs = records
     .map(item => parseJob(item, source.name))
     .filter(job => job && (!locationNeedle || job.location.toLowerCase().includes(locationNeedle.toLowerCase())));
@@ -92,9 +94,9 @@ export async function fetchPage(source, offset = 0) {
   return {
     jobs,
     total,
-    pageSize: PAGE_SIZE,
+    pageSize: batchSize,
     skipSitemap: true,
-    shortPage: !total && records.length < PAGE_SIZE,
+    shortPage: !total && records.length < batchSize,
     incremental: true
   };
 }
