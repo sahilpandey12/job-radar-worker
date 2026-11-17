@@ -29,5 +29,7 @@ jobs:
       - name: Scan enabled career pages
         env:
           FIREBASE_SERVICE_ACCOUNT_JSON: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_JSON }}
+          CAREER_FETCH_PROXY_URL: ${{ secrets.CAREER_FETCH_PROXY_URL }}
+          CAREER_FETCH_PROXY_TOKEN: ${{ secrets.CAREER_FETCH_PROXY_TOKEN }}
           SCAN_ID: ${{ github.event.inputs.scan_id }}
         run: node scripts/scan-worker.js
