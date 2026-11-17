@@ -1,0 +1,33 @@
+name: Job Finder scan
+
+on:
+  workflow_dispatch:
+    inputs:
+      scan_id:
+        description: Scan created by the Job Finder website
+        required: false
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: job-finder-scan
+  cancel-in-progress: false
+
+jobs:
+  scan:
+    runs-on: ubuntu-latest
+    timeout-minutes: 350
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Install dependencies
+        run: npm install --no-audit --no-fund
+      - name: Scan enabled career pages
+        env:
+          FIREBASE_SERVICE_ACCOUNT_JSON: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_JSON }}
+          SCAN_ID: ${{ github.event.inputs.scan_id }}
+        run: node scripts/scan-worker.js
