@@ -13,10 +13,17 @@ import * as cornerstone from './cornerstone.js';
 import * as hcltech from './hcltech.js';
 import * as cognizant from './cognizant.js';
 import * as emerson from './emerson.js';
+import * as bny from './bny.js';
+import * as tataTechnologies from './tata-technologies.js';
+import * as fisGlobal from './fis-global.js';
 import * as workday from './workday.js';
 import * as generic from './generic.js';
 
-const CAREER_PAGES=[deloitteIndia,deloitteUsi,wipro,accenture,academian,ey,barclays,mastercard,northernTrust,forvisMazars,amber,cornerstone,hcltech,cognizant,emerson,workday,generic];
+const CAREER_PAGES=[
+  deloitteIndia,deloitteUsi,wipro,accenture,academian,ey,barclays,mastercard,
+  northernTrust,forvisMazars,amber,cornerstone,hcltech,cognizant,emerson,
+  bny,tataTechnologies,fisGlobal,workday,generic
+];
 
 export function getCareerPageAdapter(sourceUrl){
   const url=sourceUrl instanceof URL?sourceUrl:new URL(sourceUrl);
@@ -36,4 +43,3 @@ export function normalizeCareerJobUrl(sourceUrl,jobUrl){
 }
 
 export { fetchText, key, unescapeHtml } from './shared.js';
-
